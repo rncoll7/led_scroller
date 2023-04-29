@@ -1,0 +1,18 @@
+{
+  "name": "led_scroller",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "canvas-sketch-cli index.js"
+  },
+  "author": "rncoll7",
+  "license": "ISC",
+  "dependencies": {
+    "canvas-sketch": "^0.7.7",
+    "tweakpane": "^3.1.9"
+  },
+  "devDependencies": {
+    "canvas-sketch-cli": "^1.11.21"
+  }
+}
