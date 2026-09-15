@@ -1,0 +1,280 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LED Renderer Bench</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #191919; color: #eee; overflow: hidden; }
+  #stage { position: fixed; inset: 0; overflow: hidden; background: #191919; }
+  #hud { position: fixed; right: 8px; bottom: 8px; z-index: 10; background: rgba(0,0,0,.8); padding: 8px 10px;
+         border-radius: 8px; white-space: pre; font: 12px ui-monospace, monospace; max-height: 90vh; overflow: auto; }
+</style>
+</head>
+<body>
+<div id="stage"></div>
+<div id="hud">loading…</div>
+<script type="module">
+const stage = document.getElementById('stage');
+const hud = document.getElementById('hud');
+const DPR = Math.min(devicePixelRatio || 1, 2);
+const LED = [0, 255, 0];
+const BG = '#191919';
+const params = new URLSearchParams(location.search);
+const DENSITIES = (params.get('rows') || '20,40,80,160').split(',').map(Number);
+const WARMUP = 600;
+const DURATION = Number(params.get('ms') || 3000);
+
+/** Text rendered once at 1 texel per LED: data[y * cols + x] = intensity 0..255. */
+function makeBitmap(rows) {
+  const text = 'RENAN - LED SCROLLER - 0123456789 - ';
+  const c = document.createElement('canvas');
+  const ctx = c.getContext('2d', { willReadFrequently: true });
+  const font = `bold ${Math.round(rows * 0.9)}px monospace`;
+  ctx.font = font;
+  const cols = Math.ceil(ctx.measureText(text).width);
+  c.width = cols; c.height = rows;
+  ctx.font = font;
+  ctx.fillStyle = '#fff';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, 0, rows / 2);
+  const rgba = ctx.getImageData(0, 0, cols, rows).data;
+  const data = new Uint8Array(cols * rows);
+  for (let i = 0; i < data.length; i++) data[i] = rgba[i * 4 + 3];
+  return { cols, rows, data };
+}
+
+const levels = Array.from({ length: 256 }, (_, v) =>
+  `rgb(${Math.ceil(LED[0] * v / 255)}, ${Math.ceil(LED[1] * v / 255)}, ${Math.ceil(LED[2] * v / 255)})`);
+
+function sizedCanvas(geo) {
+  const cv = document.createElement('canvas');
+  cv.width = Math.round(geo.w * DPR);
+  cv.height = Math.round(geo.h * DPR);
+  cv.style.cssText = `position:absolute;left:0;top:0;width:${geo.w}px;height:${geo.h}px`;
+  stage.append(cv);
+  return cv;
+}
+
+const techniques = {
+  // Same per-LED loop as the canvas-sketch version: save/translate/arc/fill/restore + a color string per LED.
+  'canvas2d-arc': (geo, bmp) => {
+    const cv = sizedCanvas(geo);
+    const ctx = cv.getContext('2d');
+    ctx.scale(DPR, DPR);
+    const { cell, cols, rows } = geo;
+    return {
+      frame(offset) {
+        ctx.fillStyle = BG;
+        ctx.fillRect(0, 0, geo.w, geo.h);
+        for (let i = 0; i < cols; i++) {
+          const x = (offset + i) % bmp.cols;
+          for (let j = 0; j < rows; j++) {
+            const v = bmp.data[j * bmp.cols + x];
+            ctx.save();
+            ctx.translate(i * cell + cell * 0.5, j * cell + cell * 0.5);
+            ctx.fillStyle = `rgb(${Math.ceil(LED[0] * v / 255)}, ${Math.ceil(LED[1] * v / 255)}, ${Math.ceil(LED[2] * v / 255)})`;
+            ctx.beginPath();
+            ctx.arc(0, 0, cell * 0.5, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+          }
+        }
+      },
+    };
+  },
+
+  // One div per LED, background written only when the value changed (the best case for this approach).
+  'dom-div-per-led': (geo, bmp) => {
+    const { cell, cols, rows } = geo;
+    const grid = document.createElement('div');
+    grid.style.cssText = `position:absolute;left:0;top:0;display:grid;grid-template-columns:repeat(${cols},${cell}px);` +
+      `grid-auto-rows:${cell}px;width:${cols * cell}px;height:${rows * cell}px;contain:strict`;
+    const els = new Array(cols * rows);
+    const last = new Int16Array(cols * rows).fill(-1);
+    const frag = document.createDocumentFragment();
+    for (let k = 0; k < cols * rows; k++) {
+      const d = document.createElement('div');
+      d.style.cssText = 'border-radius:50%;background:#000';
+      els[k] = d;
+      frag.append(d);
+    }
+    grid.append(frag);
+    stage.append(grid);
+    return {
+      frame(offset) {
+        for (let j = 0; j < rows; j++) {
+          const base = j * bmp.cols;
+          for (let i = 0; i < cols; i++) {
+            const v = bmp.data[base + (offset + i) % bmp.cols];
+            const k = j * cols + i;
+            if (last[k] !== v) {
+              last[k] = v;
+              els[k].style.backgroundColor = levels[v];
+            }
+          }
+        }
+      },
+    };
+  },
+
+  // DOM/CSS without per-LED elements: text as a pixelated strip, a CSS mask cuts it into dots, scroll = transform.
+  'css-mask-transform': (geo, bmp) => {
+    const { cell, rows } = geo;
+    const copies = Math.ceil(geo.cols / bmp.cols) + 1;
+    const mask = 'radial-gradient(circle closest-side, #000 96%, transparent 100%)';
+    const wrap = document.createElement('div');
+    wrap.style.cssText = `position:absolute;left:0;top:0;width:${geo.cols * cell}px;height:${rows * cell}px;overflow:hidden;background:#000;` +
+      `-webkit-mask-image:${mask};mask-image:${mask};-webkit-mask-size:${cell}px ${cell}px;mask-size:${cell}px ${cell}px`;
+    const strip = document.createElement('div');
+    strip.style.cssText = `display:flex;height:100%;width:${copies * bmp.cols * cell}px;will-change:transform`;
+    const img = new ImageData(bmp.cols, rows);
+    for (let i = 0; i < bmp.data.length; i++) {
+      img.data[i * 4] = LED[0]; img.data[i * 4 + 1] = LED[1]; img.data[i * 4 + 2] = LED[2]; img.data[i * 4 + 3] = bmp.data[i];
+    }
+    for (let n = 0; n < copies; n++) {
+      const c = document.createElement('canvas');
+      c.width = bmp.cols; c.height = rows;
+      c.getContext('2d').putImageData(img, 0, 0);
+      c.style.cssText = `flex:none;width:${bmp.cols * cell}px;height:${rows * cell}px;image-rendering:pixelated`;
+      strip.append(c);
+    }
+    wrap.append(strip);
+    stage.append(wrap);
+    return {
+      frame(offset) {
+        strip.style.transform = `translate3d(${-(offset % bmp.cols) * cell}px,0,0)`;
+      },
+    };
+  },
+
+  // One fullscreen triangle; the fragment shader finds the LED cell, reads its texel and draws the dot.
+  'webgl2-shader': (geo, bmp) => {
+    const cv = sizedCanvas(geo);
+    const gl = cv.getContext('webgl2', { antialias: false, alpha: false, depth: false, powerPreference: 'high-performance' });
+    const compile = (type, src) => {
+      const s = gl.createShader(type);
+      gl.shaderSource(s, src);
+      gl.compileShader(s);
+      if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s));
+      return s;
+    };
+    const prog = gl.createProgram();
+    gl.attachShader(prog, compile(gl.VERTEX_SHADER, `#version 300 es
+      in vec2 p; void main() { gl_Position = vec4(p, 0.0, 1.0); }`));
+    gl.attachShader(prog, compile(gl.FRAGMENT_SHADER, `#version 300 es
+      precision highp float; precision highp int;
+      uniform sampler2D u_tex; uniform float u_cell; uniform float u_height; uniform int u_offset;
+      uniform ivec2 u_size; uniform vec3 u_led; uniform vec3 u_bg;
+      out vec4 color;
+      void main() {
+        vec2 px = vec2(gl_FragCoord.x, u_height - gl_FragCoord.y) / u_cell;
+        ivec2 c = ivec2(floor(px));
+        if (c.y >= u_size.y) { color = vec4(u_bg, 1.0); return; }
+        float v = texelFetch(u_tex, ivec2((c.x + u_offset) % u_size.x, c.y), 0).r;
+        float d = length(fract(px) - 0.5) * u_cell;
+        float a = clamp(0.5 * u_cell - d + 0.5, 0.0, 1.0);
+        color = vec4(mix(u_bg, u_led * v, a), 1.0);
+      }`));
+    gl.linkProgram(prog);
+    gl.useProgram(prog);
+    const buf = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
+    const loc = gl.getAttribLocation(prog, 'p');
+    gl.enableVertexAttribArray(loc);
+    gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+    const tex = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.R8, bmp.cols, bmp.rows, 0, gl.RED, gl.UNSIGNED_BYTE, bmp.data);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    const u = (n) => gl.getUniformLocation(prog, n);
+    gl.viewport(0, 0, cv.width, cv.height);
+    gl.uniform1f(u('u_cell'), geo.cell * DPR);
+    gl.uniform1f(u('u_height'), cv.height);
+    gl.uniform2i(u('u_size'), bmp.cols, bmp.rows);
+    gl.uniform3f(u('u_led'), LED[0] / 255, LED[1] / 255, LED[2] / 255);
+    gl.uniform3f(u('u_bg'), 25 / 255, 25 / 255, 25 / 255);
+    const uOffset = u('u_offset');
+    return {
+      frame(offset) {
+        gl.uniform1i(uOffset, offset % bmp.cols);
+        gl.drawArrays(gl.TRIANGLES, 0, 3);
+      },
+    };
+  },
+};
+
+const nextFrame = () => new Promise((r) => requestAnimationFrame(r));
+const results = [];
+window.__bench = { results, done: false };
+
+function render(status) {
+  const pad = (s, n) => String(s).padEnd(n);
+  const lines = [`DPR ${DPR}  viewport ${innerWidth}x${innerHeight}  visibility ${document.visibilityState}`, status, '',
+    `${pad('technique', 20)}${pad('rows', 6)}${pad('LEDs', 8)}${pad('fps', 7)}${pad('main ms', 9)}p95 ms`];
+  for (const r of results) {
+    lines.push(`${pad(r.technique, 20)}${pad(r.rows, 6)}${pad(r.leds, 8)}${pad(r.fps.toFixed(1), 7)}${pad(r.mean.toFixed(2), 9)}${r.p95.toFixed(2)}`);
+  }
+  hud.textContent = lines.join('\n');
+}
+
+async function runOne(name, rows) {
+  stage.replaceChildren();
+  const cell = Math.floor(innerHeight / rows);
+  const geo = { w: innerWidth, h: cell * rows, cell, rows, cols: Math.ceil(innerWidth / cell) };
+  const t = techniques[name](geo, makeBitmap(rows));
+  for (let i = 0; i < 5; i++) await nextFrame();
+
+  // Main-thread cost per frame = rAF callback start until the next task runs, i.e. JS + style + layout + paint.
+  const costs = [];
+  const channel = new MessageChannel();
+  let frameStart = 0;
+  let measuring = false;
+  channel.port1.onmessage = () => { if (measuring) costs.push(performance.now() - frameStart); };
+
+  let offset = 0;
+  let frames = 0;
+  let measureStart = 0;
+  const begin = performance.now();
+  for (;;) {
+    const now = await nextFrame();
+    const elapsed = performance.now() - begin;
+    if (elapsed >= WARMUP + DURATION) break;
+    if (!measuring && elapsed >= WARMUP) { measuring = true; measureStart = now; }
+    frameStart = performance.now();
+    t.frame(offset++);
+    channel.port2.postMessage(0);
+    if (measuring) frames++;
+  }
+  const measured = performance.now() - measureStart;
+  await new Promise((r) => setTimeout(r, 50));
+  costs.sort((a, b) => a - b);
+  results.push({
+    technique: name, rows, leds: geo.cols * rows,
+    fps: (frames * 1000) / measured,
+    mean: costs.reduce((a, b) => a + b, 0) / Math.max(costs.length, 1),
+    p95: costs[Math.floor(costs.length * 0.95)] ?? 0,
+  });
+  stage.replaceChildren();
+}
+
+async function main() {
+  const only = params.get('only');
+  const names = Object.keys(techniques).filter((n) => !only || only.split(',').includes(n));
+  for (const rows of DENSITIES) {
+    for (const name of names) {
+      render(`running ${name} @ ${rows} rows…`);
+      await runOne(name, rows);
+    }
+  }
+  render('done');
+  window.__bench.done = true;
+}
+
+setTimeout(main, 300);
+</script>
+</body>
+</html>

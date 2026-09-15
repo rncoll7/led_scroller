@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover"
+    />
+    <meta name="description" content="Letreiro de LED rolante em tela cheia: escreva, escolha as cores e mostre. Funciona offline." />
+    <meta name="theme-color" content="#191919" />
+    <meta name="color-scheme" content="dark" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="LED" />
+    <meta name="format-detection" content="telephone=no" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <title>LED Scroller</title>
+  </head>
+  <body>
+    <main id="stage" aria-label="Letreiro">
+      <div id="sign"></div>
+    </main>
+
+    <div class="toolbar" id="toolbar">
+      <button class="icon-btn" id="btn-pause" type="button" aria-label="Pausar">
+        <svg class="when-off" viewBox="0 0 24 24" aria-hidden="true">
+          <rect x="6" y="5" width="4" height="14" rx="1.5" />
+          <rect x="14" y="5" width="4" height="14" rx="1.5" />
+        </svg>
+        <svg class="when-on" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M8 5.5v13a1 1 0 0 0 1.5.86l10.5-6.5a1 1 0 0 0 0-1.72L9.5 4.64A1 1 0 0 0 8 5.5z" />
+        </svg>
+      </button>
+      <button class="icon-btn" id="btn-fullscreen" type="button" aria-label="Tela cheia">
+        <svg class="line when-off" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" />
+        </svg>
+        <svg class="line when-on" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5" />
+        </svg>
+      </button>
+      <button
+        class="icon-btn"
+        id="btn-settings"
+        type="button"
+        aria-label="Configurações"
+        aria-controls="panel"
+        aria-expanded="false"
+      >
+        <svg class="line" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M4 7h9M17 7h3M4 12h3M11 12h9M4 17h11M19 17h1" />
+          <circle cx="15" cy="7" r="2" />
+          <circle cx="9" cy="12" r="2" />
+          <circle cx="17" cy="17" r="2" />
+        </svg>
+      </button>
+    </div>
+
+    <aside class="panel" id="panel" aria-label="Configurações" inert>
+      <header class="panel-head">
+        <h1>LED Scroller</h1>
+        <button class="icon-btn small" id="btn-close" type="button" aria-label="Fechar">
+          <svg class="line" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
+        </button>
+      </header>
+      <div class="panel-body">
+        <div id="panel-controls"></div>
+        <footer class="panel-foot">
+          <button class="btn primary" id="btn-install" type="button" hidden>Instalar app</button>
+          <button class="btn ghost" id="btn-reset" type="button">Restaurar aparência</button>
+          <p class="hint">
+            Toque no letreiro para mostrar ou esconder os botões; toque duas vezes para tela cheia. Teclado:
+            <kbd>Espaço</kbd> pausa, <kbd>F</kbd> tela cheia, <kbd>S</kbd> configurações.
+          </p>
+        </footer>
+      </div>
+    </aside>
+
+    <section class="overlay" id="screen-ios" aria-labelledby="ios-title" hidden>
+      <div class="dialog">
+        <h2 id="ios-title">Instalar no iPhone</h2>
+        <ol class="steps">
+          <li>
+            Toque em <strong>Compartilhar</strong>
+            <svg class="inline-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 15V3M8 7l4-4 4 4" />
+              <path d="M8 11H6a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-8a1 1 0 0 0-1-1h-2" />
+            </svg>
+            na barra do navegador.
+          </li>
+          <li>Escolha <strong>Adicionar à Tela de Início</strong>.</li>
+          <li>Toque em <strong>Adicionar</strong>. O letreiro abre em tela cheia e funciona offline.</li>
+        </ol>
+        <button class="btn primary" id="btn-ios-ok" type="button">Entendi</button>
+      </div>
+    </section>
+
+    <div class="toast" id="toast" role="status" hidden>
+      <span id="toast-text"></span>
+      <button id="toast-action" type="button" hidden></button>
+    </div>
+
+    <div class="stats" id="stats" hidden></div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

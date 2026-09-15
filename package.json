@@ -1,18 +1,23 @@
 {
-  "name": "led_scroller",
-  "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
-  "scripts": {
-    "test": "canvas-sketch-cli index.js"
-  },
+  "name": "led-scroller",
+  "private": true,
+  "version": "2.0.0",
+  "description": "Letreiro de LED rolante: PWA instalável, offline, renderizado com WebGL.",
   "author": "rncoll7",
   "license": "ISC",
-  "dependencies": {
-    "canvas-sketch": "^0.7.7",
-    "tweakpane": "^3.1.9"
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "icons": "sh scripts/generate-icons.sh"
   },
   "devDependencies": {
-    "canvas-sketch-cli": "^1.11.21"
+    "typescript": "^7.0.2",
+    "vite": "^8.3.0",
+    "vite-plugin-pwa": "^1.3.0",
+    "vitest": "^5.0.1",
+    "workbox-window": "^7.4.1"
   }
 }
