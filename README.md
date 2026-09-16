@@ -27,7 +27,7 @@ Instalação e service worker exigem HTTPS (a única exceção é `localhost`). 
 
 - **Android via USB:** `adb reverse tcp:4173 tcp:4173` e abra `http://localhost:4173` no Chrome do celular.
 - **Túnel HTTPS:** `cloudflared tunnel --url http://localhost:4173` e abra a URL gerada.
-- **Publicar:** o `dist/` é estático e roda em Cloudflare Pages, Netlify, Vercel ou GitHub Pages. Para publicar em subcaminho: `npm run build -- --base=/led_scroller/`.
+- **Publicar:** `npm run deploy` publica em <https://led-scroller.rn7.dev.br>. Veja [Deploy](#deploy).
 
 ## Instalando
 
@@ -71,6 +71,32 @@ Outros ganhos:
 - densidade de pixels limitada a 2×;
 - botões e painel com fundo sólido: `backdrop-filter` teria que refazer o desfoque a cada quadro do letreiro;
 - se o sistema derrubar o contexto WebGL (app em segundo plano), ele é recriado.
+
+## Deploy
+
+O jogo é publicado em <https://led-scroller.rn7.dev.br> por um Cloudflare Worker de
+assets estáticos, na conta pessoal. A configuração está em `wrangler.jsonc`.
+
+```bash
+npm run deploy    # npm run build && wrangler deploy
+```
+
+O deploy precisa de um token da conta Cloudflare pessoal em `.env.local` (ignorado
+pelo git):
+
+```
+CLOUDFLARE_API_TOKEN=<token do template "Edit Cloudflare Workers">
+```
+
+O `account_id` está fixado no `wrangler.jsonc`, então um token de outra conta faz o
+deploy falhar em vez de publicar no lugar errado. Na primeira publicação o wrangler
+cria sozinho o registro DNS e o certificado do subdomínio.
+
+As duas imagens em `public/screenshot-narrow.png` (1080x1920) e
+`public/screenshot-wide.png` (1920x1080) são o que o Android mostra no diálogo de
+instalação. Os tamanhos declarados no `vite.config.ts` precisam bater com os
+arquivos, senão o Chrome descarta as imagens e volta para a barrinha mínima — se a
+cara do jogo mudar, recapture nesses mesmos tamanhos.
 
 ## Estrutura
 

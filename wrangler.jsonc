@@ -1,0 +1,29 @@
+{
+  // Assets-only Worker: Cloudflare serves ./dist straight from the edge, there
+  // is no server code. Docs: https://developers.cloudflare.com/workers/static-assets/
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "led-scroller",
+
+  // Personal Cloudflare account ("Rncoll7@gmail.com's Account"). This is the
+  // tenant id, not a credential — pinning it makes a deploy from the wrong login
+  // fail instead of publishing this game into another account. The credential is
+  // CLOUDFLARE_API_TOKEN in .env.local, which is git-ignored by `*.local`.
+  "account_id": "05e0875ce45767a8a0fa2f6c7147216c",
+  "compatibility_date": "2026-09-16",
+
+  "assets": {
+    "directory": "./dist"
+    // `not_found_handling` stays at its default (`none`) on purpose: the game is
+    // a single page with no client-side routes, and offline navigation is the
+    // service worker's job already. `single-page-application` would answer a
+    // missing hashed asset with index.html and a 200, and workbox would precache
+    // that HTML as if it were the chunk.
+  },
+
+  // The address is the custom domain; `wrangler deploy` creates the DNS record
+  // and the certificate on the first publish. No workers.dev twin: a second
+  // origin serving the same PWA is another live service-worker scope out there
+  // and duplicate content for search engines.
+  "workers_dev": false,
+  "routes": [{ "pattern": "led-scroller.rn7.dev.br", "custom_domain": true }]
+}
