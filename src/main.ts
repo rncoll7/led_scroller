@@ -344,6 +344,12 @@ setupServiceWorker({
   },
 });
 
+// The build is stamped in UTC and read here in whatever time zone the phone is on.
+$('build-stamp').textContent = `${__BUILD__.version} · ${new Date(__BUILD__.at).toLocaleString('pt-BR', {
+  dateStyle: 'short',
+  timeStyle: 'short',
+})}`;
+
 if (stats) stats.hidden = false;
 new ResizeObserver(() => {
   layoutDirty = true;

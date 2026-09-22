@@ -19,7 +19,11 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
+      # The whole history: the build stamps the commit count into the version,
+      # and a shallow clone would call every build number one.
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-node@v5
         with:

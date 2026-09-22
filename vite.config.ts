@@ -1,9 +1,26 @@
+import { execSync } from 'node:child_process';
 import { defineConfig } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
 
 const THEME = '#000000';
 
+/**
+ * Which build this is, for the small print on the front door: `1.0`, the number of commits behind it and
+ * the commit itself, plus the moment it was built. The count only means anything on a full clone, so the
+ * workflow checks out the whole history; a build without git at all still runs, it just says `dev`.
+ */
+function stamp(): { version: string; at: string } {
+  const git = (args: string) => execSync(`git ${args}`, { stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
+  const at = new Date().toISOString();
+  try {
+    return { version: `1.0.${git('rev-list --count HEAD')}.${git('rev-parse --short HEAD')}`, at };
+  } catch {
+    return { version: '1.0.dev', at };
+  }
+}
+
 export default defineConfig({
+  define: { __BUILD__: JSON.stringify(stamp()) },
   server: { host: true },
   preview: { host: true },
   plugins: [

@@ -94,9 +94,17 @@ cria sozinho o registro DNS e o certificado do subdomínio.
 
 Todo push na `main` publica sozinho por `.github/workflows/deploy.yml`: o workflow
 roda `npm ci`, `npm test` e `npm run build` e só então `wrangler deploy`, com o mesmo
-wrangler do lockfile. O token vai no segredo `CLOUDFLARE_API_TOKEN` do repositório
-(Settings › Secrets and variables › Actions) — é a única credencial, porque a conta
-está no `wrangler.jsonc`.
+wrangler do lockfile. O checkout é da história inteira (`fetch-depth: 0`) porque o
+build carimba a versão a partir dela. O token vai no segredo `CLOUDFLARE_API_TOKEN` do
+repositório (Settings › Secrets and variables › Actions) — é a única credencial, porque
+a conta está no `wrangler.jsonc`.
+
+O rodapé do painel de configurações mostra de qual build o app rodando saiu:
+`1.0.<número do commit>.<hash curto>` e a data e hora em que ele foi construído — o
+`vite.config.ts` pergunta isso ao git e injeta em `__BUILD__`, e a tela formata a hora
+no fuso do aparelho. Sem git (um `.zip` do código, por exemplo) o build sai como
+`1.0.dev`. Serve para saber, com o app instalado, se o que está na mão já é o que foi
+publicado.
 
 As duas imagens em `public/screenshot-narrow.png` (1080x1920) e
 `public/screenshot-wide.png` (1920x1080) são o que o Android mostra no diálogo de
