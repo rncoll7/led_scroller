@@ -92,6 +92,12 @@ O `account_id` está fixado no `wrangler.jsonc`, então um token de outra conta 
 deploy falhar em vez de publicar no lugar errado. Na primeira publicação o wrangler
 cria sozinho o registro DNS e o certificado do subdomínio.
 
+Todo push na `main` publica sozinho por `.github/workflows/deploy.yml`: o workflow
+roda `npm ci`, `npm test` e `npm run build` e só então `wrangler deploy`, com o mesmo
+wrangler do lockfile. O token vai no segredo `CLOUDFLARE_API_TOKEN` do repositório
+(Settings › Secrets and variables › Actions) — é a única credencial, porque a conta
+está no `wrangler.jsonc`.
+
 As duas imagens em `public/screenshot-narrow.png` (1080x1920) e
 `public/screenshot-wide.png` (1920x1080) são o que o Android mostra no diálogo de
 instalação. Os tamanhos declarados no `vite.config.ts` precisam bater com os
