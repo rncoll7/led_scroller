@@ -53,13 +53,63 @@ export function setupInstall(onChange: (mode: InstallMode) => void): { install()
   };
 }
 
+/**
+ * What a look for a new version came back with. `waiting` means one is already downloaded and only needs
+ * the reload; `current` means the server has nothing newer; `offline` that the question never got there;
+ * `unsupported` that this browser is not keeping the app at all, which is also the case while developing.
+ */
+export type UpdateCheck = 'waiting' | 'current' | 'offline' | 'unsupported';
+
+/** How often the app asks on its own, while it is open. */
+const UPDATE_EVERY = 60 * 60 * 1000;
+
+let registration: ServiceWorkerRegistration | undefined;
+let apply: ((reload: boolean) => Promise<void>) | null = null;
+/** Set once a new version has been downloaded and is only waiting for the reload. */
+let waiting = false;
+
 export function setupServiceWorker(handlers: { onNeedRefresh(apply: () => void): void; onOfflineReady(): void }): void {
   if (!('serviceWorker' in navigator)) return;
   const updateSW = registerSW({
-    onNeedRefresh: () => handlers.onNeedRefresh(() => void updateSW(true)),
-    onOfflineReady: handlers.onOfflineReady,
-    onRegisteredSW(_url, registration) {
-      if (registration) setInterval(() => void registration.update(), 60 * 60 * 1000);
+    onNeedRefresh: () => {
+      waiting = true;
+      handlers.onNeedRefresh(() => void updateSW(true));
     },
+    onOfflineReady: handlers.onOfflineReady,
+    onRegisteredSW(_url, current) {
+      registration = current;
+      apply = updateSW;
+      if (current) setInterval(() => void current.update(), UPDATE_EVERY);
+    },
+  });
+}
+
+/** Takes the new version that is already downloaded: it installs and the page comes back on it. */
+export function applyUpdate(): void {
+  void apply?.(true);
+}
+
+/**
+ * Asks the server for a new version right now, instead of waiting for the hourly look. Resolves only
+ * once whatever it found has finished installing, so what it answers is what the player can act on.
+ */
+export async function checkForUpdate(): Promise<UpdateCheck> {
+  if (!('serviceWorker' in navigator) || !registration) return 'unsupported';
+  try {
+    await registration.update();
+  } catch {
+    return 'offline';
+  }
+  await settled(registration.installing);
+  return waiting || registration.waiting ? 'waiting' : 'current';
+}
+
+/** Waits for a worker that is downloading to finish, one way or the other. */
+function settled(worker: ServiceWorker | null): Promise<void> {
+  if (!worker || worker.state === 'installed' || worker.state === 'redundant') return Promise.resolve();
+  return new Promise((done) => {
+    worker.addEventListener('statechange', () => {
+      if (worker.state === 'installed' || worker.state === 'activated' || worker.state === 'redundant') done();
+    });
   });
 }

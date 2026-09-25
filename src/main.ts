@@ -2,7 +2,7 @@ import './style.css';
 import { renderText } from './bitmap';
 import { ledGrid, signLayout, type LedGrid } from './layout';
 import { buildPanel } from './panel';
-import { setupInstall, setupServiceWorker, type InstallMode } from './pwa';
+import { applyUpdate, checkForUpdate, setupInstall, setupServiceWorker, type InstallMode } from './pwa';
 import { createRenderer, type Rgb } from './renderer';
 import { advance, composeFrame, loopLength, startOffset, type TextBitmap } from './scroll';
 import { DEFAULT_SETTINGS, type Settings } from './settings';
@@ -329,26 +329,45 @@ installButton.addEventListener('click', () => {
 });
 $('btn-ios-ok').addEventListener('click', () => ($('screen-ios').hidden = true));
 
+/** Offers the version that is already downloaded; taking it reloads the page on it. */
+function offerUpdate(apply: () => void): void {
+  toast('Nova versão disponível', {
+    label: 'Atualizar',
+    run: () => {
+      storage.saveSettings(settings);
+      apply();
+    },
+  });
+}
+
 setupServiceWorker({
-  onNeedRefresh(apply) {
-    toast('Nova versão disponível', {
-      label: 'Atualizar',
-      run: () => {
-        storage.saveSettings(settings);
-        apply();
-      },
-    });
-  },
+  onNeedRefresh: offerUpdate,
   onOfflineReady() {
     toast('Pronto para usar offline');
   },
 });
 
+// The version on screen is also the button that asks the server for a newer one, right now.
+const stamp = $('build-stamp') as HTMLButtonElement;
 // The build is stamped in UTC and read here in whatever time zone the phone is on.
-$('build-stamp').textContent = `${__BUILD__.version} · ${new Date(__BUILD__.at).toLocaleString('pt-BR', {
+stamp.textContent = `${__BUILD__.version} · ${new Date(__BUILD__.at).toLocaleString('pt-BR', {
   dateStyle: 'short',
   timeStyle: 'short',
 })}`;
+stamp.addEventListener('click', async () => {
+  stamp.disabled = true;
+  const found = await checkForUpdate();
+  stamp.disabled = false;
+  if (found === 'waiting') offerUpdate(applyUpdate);
+  else
+    toast(
+      {
+        current: 'Você já está na última versão',
+        offline: 'Sem conexão para procurar agora',
+        unsupported: 'Este navegador não atualiza o app sozinho',
+      }[found],
+    );
+});
 
 if (stats) stats.hidden = false;
 new ResizeObserver(() => {
