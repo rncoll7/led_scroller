@@ -1,10 +1,13 @@
 import './style.css';
 import { renderText } from './bitmap';
-import { ledGrid, signLayout, type LedGrid } from './layout';
+import { ledGrid, signLayout, toSign, type LedGrid, type SignLayout } from './layout';
 import { buildPanel } from './panel';
 import { applyUpdate, checkForUpdate, setupInstall, setupServiceWorker, type InstallMode } from './pwa';
 import { createRenderer, type Rgb } from './renderer';
 import { advance, composeFrame, loopLength, startOffset, type TextBitmap } from './scroll';
+import { checkPin, hashPin, isValidPin, type LockState } from './lock';
+import { Scoreboard, vibrate, type Side } from './placar';
+import { drawScoreboard } from './scoreboard';
 import { DEFAULT_SETTINGS, type Settings } from './settings';
 import { storage } from './storage';
 
@@ -12,10 +15,17 @@ import { storage } from './storage';
 const IDLE_MS = 3500;
 /** Longest time step taken in one frame, so a stall does not make the text jump ahead. */
 const MAX_STEP_S = 0.1;
+/** How long the lock button has to be held before it asks for the PIN. */
+const HOLD_TO_UNLOCK_MS = 2000;
+/** Wrong PINs in a row before unlocking pauses for PIN_COOLDOWN_MS. */
+const PIN_TRIES = 5;
+const PIN_COOLDOWN_MS = 30_000;
 
 const LAYOUT_KEYS = new Set<keyof Settings>(['rows', 'rotation']);
 const TEXT_KEYS = new Set<keyof Settings>(['rows', 'text', 'font', 'bold', 'textSize']);
 const STYLE_KEYS = new Set<keyof Settings>(['led', 'background', 'dotSize', 'glow', 'dim']);
+/** What "Restaurar aparência" leaves alone. */
+const NOT_APPEARANCE = new Set<keyof Settings>(['text', 'mode', 'game', 'swapSides']);
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -26,13 +36,33 @@ const settingsButton = $<HTMLButtonElement>('btn-settings');
 const pauseButton = $<HTMLButtonElement>('btn-pause');
 const fullscreenButton = $<HTMLButtonElement>('btn-fullscreen');
 const installButton = $<HTMLButtonElement>('btn-install');
+const undoButton = $<HTMLButtonElement>('btn-undo');
+const resetScoreButton = $<HTMLButtonElement>('btn-reset-score');
+const unlockButton = $<HTMLButtonElement>('btn-unlock');
+const changePinButton = $<HTMLButtonElement>('btn-change-pin');
+const serveButtons: Record<Side, HTMLButtonElement> = { left: $('btn-serve-left'), right: $('btn-serve-right') };
+const pinScreen = $('screen-pin');
+const pinInput = $<HTMLInputElement>('pin-input');
+const toolbar = $('toolbar');
+/** Where the toolbar goes back to when the scoreboard (which moves it into the sign) is turned off. */
+const toolbarHome = { parent: toolbar.parentElement!, next: toolbar.nextSibling };
 const themeColor = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]');
 const stats = new URLSearchParams(location.search).has('stats') ? $('stats') : null;
 
 const settings = storage.settings();
 
+const scoreboard = new Scoreboard(settings.game, {
+  changed() {
+    redraw();
+    syncScorePanel();
+  },
+});
+scoreboard.leftTeam = settings.swapSides ? 'b' : 'a';
+let lock: LockState = storage.lock();
+
 let text: TextBitmap = { cols: 1, rows: 1, data: new Uint8Array(1) };
 let grid: LedGrid = ledGrid(1, 1, 1);
+let layout: SignLayout | null = null;
 let frame = new Uint8Array(1);
 let period = 1;
 let offset = 0;
@@ -59,7 +89,7 @@ function applyLayout(): boolean {
   const width = stage.clientWidth;
   const height = stage.clientHeight;
   if (!width || !height) return false;
-  const layout = signLayout(width, height, settings.rotation);
+  layout = signLayout(width, height, settings.rotation);
   sign.style.width = `${layout.width}px`;
   sign.style.height = `${layout.height}px`;
   sign.style.transform = layout.transform;
@@ -103,6 +133,15 @@ function tick(now: number): void {
     needsDraw = true;
   }
 
+  if (settings.mode === 'placar') {
+    if (needsDraw) {
+      drawScoreboard(frame, grid.cols, grid.rows, scoreboard.view());
+      renderer.draw(frame);
+      needsDraw = false;
+    }
+    return;
+  }
+
   const moving = !paused && settings.speed > 0 && !document.hidden;
   if (moving && lastTime) {
     offset = advance(offset, Math.min((now - lastTime) / 1000, MAX_STEP_S), settings.speed, settings.direction, period);
@@ -143,7 +182,14 @@ function reportStats(now: number, cost: number): void {
 let saveTimer = 0;
 function change<K extends keyof Settings>(key: K, value: Settings[K]): void {
   if (settings[key] === value) return;
+  if (key === 'game' && scoreboard.inProgress && !confirm('Mudar o jogo começa uma partida nova. O placar atual será perdido.')) return;
   settings[key] = value;
+  if (key === 'mode') applyMode();
+  if (key === 'game') scoreboard.newGame(settings.game);
+  if (key === 'swapSides') {
+    scoreboard.leftTeam = settings.swapSides ? 'b' : 'a';
+    syncScorePanel();
+  }
   if (LAYOUT_KEYS.has(key)) layoutDirty = true;
   if (TEXT_KEYS.has(key)) textDirty = true;
   if (STYLE_KEYS.has(key)) styleDirty = true;
@@ -152,6 +198,137 @@ function change<K extends keyof Settings>(key: K, value: Settings[K]): void {
   clearTimeout(saveTimer);
   saveTimer = window.setTimeout(() => storage.saveSettings(settings), 300);
   schedule();
+}
+
+// ---- Scoreboard ----
+
+function redraw(): void {
+  needsDraw = true;
+  schedule();
+}
+
+function applyMode(): void {
+  const placar = settings.mode === 'placar';
+  document.body.classList.toggle('placar', placar);
+  undoButton.hidden = resetScoreButton.hidden = !placar;
+  // On the scoreboard the buttons live inside the sign, so they turn with it, stay visible
+  // (a tap on the sign scores instead of showing them) and sit over the divider between the scores.
+  if (placar) sign.append(toolbar);
+  else toolbarHome.parent.insertBefore(toolbar, toolbarHome.next);
+  scoreboard.disarm();
+  applyLock();
+  lastTime = 0;
+  showControls();
+  redraw();
+}
+
+function syncScorePanel(): void {
+  const serving = scoreboard.servingSide;
+  for (const side of ['left', 'right'] as const) serveButtons[side].setAttribute('aria-pressed', String(serving === side));
+}
+
+function startNewMatch(): boolean {
+  if (scoreboard.inProgress && !confirm('Começar uma partida nova? O placar atual será perdido.')) return false;
+  scoreboard.newGame(settings.game);
+  return true;
+}
+
+// ---- Lock ----
+
+function isLocked(): boolean {
+  return lock.locked && settings.mode === 'placar';
+}
+
+function applyLock(): void {
+  const locked = isLocked();
+  document.body.classList.toggle('locked', locked);
+  unlockButton.hidden = !locked;
+  changePinButton.hidden = lock.pin === '';
+  if (locked) setPanel(false);
+}
+
+function setLock(next: LockState): void {
+  lock = next;
+  storage.saveLock(lock);
+  applyLock();
+  if (isLocked()) trapBack();
+}
+
+/** An extra history entry, so the Android back button (or gesture) lands here instead of leaving the app. */
+function trapBack(): void {
+  history.pushState({ locked: true }, '');
+}
+
+let pinHandler: ((pin: string) => string | null) | null = null;
+
+/** Asks for a PIN. `handler` returns an error to show (and ask again), or null to close. */
+function askPin(title: string, hint: string, handler: (pin: string) => string | null): void {
+  $('pin-title').textContent = title;
+  $('pin-hint').textContent = hint;
+  $('pin-error').textContent = '';
+  pinInput.value = '';
+  pinHandler = handler;
+  pinScreen.hidden = false;
+  pinInput.focus();
+}
+
+function closePin(): void {
+  pinScreen.hidden = true;
+  pinHandler = null;
+  pinInput.blur();
+}
+
+function createPin(then: () => void): void {
+  askPin('Criar PIN', 'Escolha 4 números. Só com eles dá para destravar o placar.', (first) => {
+    askPin('Repita o PIN', 'Digite os mesmos 4 números.', (second) => {
+      if (second !== first) return 'Os PINs não batem. Digite de novo.';
+      setLock({ ...lock, pin: hashPin(first) });
+      then();
+      return null;
+    });
+    return null;
+  });
+}
+
+function lockNow(): void {
+  setLock({ ...lock, locked: true });
+  toast('Placar travado');
+}
+
+let wrongPins = 0;
+let pinBlockedUntil = 0;
+
+function askUnlock(): void {
+  askPin('Destravar', 'Digite o PIN do dono do placar.', (pin) => {
+    if (Date.now() < pinBlockedUntil) return 'Muitas tentativas. Espere um pouco.';
+    if (!checkPin(lock, pin)) {
+      wrongPins++;
+      if (wrongPins >= PIN_TRIES) {
+        wrongPins = 0;
+        pinBlockedUntil = Date.now() + PIN_COOLDOWN_MS;
+        return 'Muitas tentativas. Espere 30 segundos.';
+      }
+      return 'PIN errado.';
+    }
+    wrongPins = 0;
+    setLock({ ...lock, locked: false });
+    setPanel(true);
+    return null;
+  });
+}
+
+let holdTimer = 0;
+function stopHold(): void {
+  clearTimeout(holdTimer);
+  unlockButton.classList.remove('holding');
+}
+
+/** Which half of the scoreboard, as the viewer sees it, is under a point on the screen. */
+function sideAt(clientX: number, clientY: number): Side | null {
+  if (!layout) return null;
+  const rect = stage.getBoundingClientRect();
+  const point = toSign(layout.turns, rect.width, rect.height, clientX - rect.left, clientY - rect.top);
+  return point.x < layout.width / 2 ? 'left' : 'right';
 }
 
 // ---- Controls ----
@@ -173,6 +350,7 @@ function isPanelOpen(): boolean {
 }
 
 function setPanel(open: boolean): void {
+  if (open && isLocked()) return;
   if (open === isPanelOpen()) return;
   const hadFocus = panelElement.contains(document.activeElement);
   panelElement.classList.toggle('open', open);
@@ -251,12 +429,17 @@ const panel = buildPanel($('panel-controls'), settings, change, {
   wakeLock: 'wakeLock' in navigator,
 });
 
-stage.addEventListener('click', () => {
+stage.addEventListener('click', (event) => {
   if (isPanelOpen()) setPanel(false);
-  else if (document.body.classList.contains('idle')) showControls();
+  else if (settings.mode === 'placar') {
+    const side = sideAt(event.clientX, event.clientY);
+    if (side) scoreboard.point(side);
+  } else if (document.body.classList.contains('idle')) showControls();
   else hideControls();
 });
-stage.addEventListener('dblclick', toggleFullscreen);
+stage.addEventListener('dblclick', () => {
+  if (settings.mode !== 'placar') toggleFullscreen(); // on the scoreboard a quick second tap is a point, not full screen
+});
 stage.addEventListener('pointermove', (event) => {
   if (event.pointerType === 'mouse') showControls();
 });
@@ -267,6 +450,49 @@ pauseButton.addEventListener('click', () => {
   togglePause();
   showControls();
 });
+undoButton.addEventListener('click', () => scoreboard.undo());
+resetScoreButton.addEventListener('click', () => scoreboard.reset());
+// In scoreboard mode the toolbar is inside the stage: a press on a button must not also score on the half under it.
+for (const type of ['click', 'dblclick'] as const) toolbar.addEventListener(type, (event) => event.stopPropagation());
+
+serveButtons.left.addEventListener('click', () => scoreboard.serve('left'));
+serveButtons.right.addEventListener('click', () => scoreboard.serve('right'));
+$('btn-new-match').addEventListener('click', startNewMatch);
+$('btn-lock').addEventListener('click', () => (lock.pin ? lockNow() : createPin(lockNow)));
+changePinButton.addEventListener('click', () => createPin(() => toast('PIN trocado')));
+
+unlockButton.addEventListener('pointerdown', () => {
+  unlockButton.classList.add('holding');
+  holdTimer = window.setTimeout(() => {
+    stopHold();
+    vibrate(40);
+    askUnlock();
+  }, HOLD_TO_UNLOCK_MS);
+});
+for (const type of ['pointerup', 'pointerleave', 'pointercancel'] as const) unlockButton.addEventListener(type, stopHold);
+unlockButton.addEventListener('contextmenu', (event) => event.preventDefault());
+unlockButton.addEventListener('click', () => {
+  if (pinScreen.hidden) toast('Segure o cadeado por 2 segundos para destravar');
+});
+
+$('pin-form').addEventListener('submit', (event) => {
+  event.preventDefault();
+  const handler = pinHandler;
+  if (!handler) return;
+  const pin = pinInput.value;
+  const error = isValidPin(pin) ? handler(pin) : 'O PIN tem 4 números.';
+  if (error) {
+    $('pin-error').textContent = error;
+    pinInput.value = '';
+    pinInput.focus();
+    vibrate([30, 30, 30]);
+  } else if (pinHandler === handler) closePin(); // a handler that asked for another PIN keeps the dialog open
+});
+$('btn-pin-cancel').addEventListener('click', closePin);
+window.addEventListener('popstate', () => {
+  if (isLocked()) trapBack();
+});
+
 fullscreenButton.hidden = !document.fullscreenEnabled;
 fullscreenButton.addEventListener('click', toggleFullscreen);
 document.addEventListener('fullscreenchange', () => {
@@ -275,7 +501,7 @@ document.addEventListener('fullscreenchange', () => {
 
 $('btn-reset').addEventListener('click', () => {
   for (const key of Object.keys(DEFAULT_SETTINGS) as (keyof Settings)[]) {
-    if (key !== 'text') change(key, DEFAULT_SETTINGS[key]);
+    if (!NOT_APPEARANCE.has(key)) change(key, DEFAULT_SETTINGS[key]);
   }
   panel.sync();
 });
@@ -286,8 +512,16 @@ window.addEventListener('keydown', (event) => {
     if (event.key === 'Escape') target.blur();
     return;
   }
+  const key = event.key.toLowerCase();
+  if (settings.mode === 'placar' && (key === 'a' || key === 'l' || key === 'z')) {
+    if (key === 'z') scoreboard.undo();
+    else scoreboard.point(key === 'a' ? 'left' : 'right');
+    event.preventDefault();
+    return;
+  }
   switch (event.key) {
     case ' ':
+      if (settings.mode === 'placar') return; // nothing to pause on the scoreboard
       togglePause();
       break;
     case 'f':
@@ -369,6 +603,9 @@ stamp.addEventListener('click', async () => {
     );
 });
 
+applyMode();
+syncScorePanel();
+if (isLocked()) trapBack();
 if (stats) stats.hidden = false;
 new ResizeObserver(() => {
   layoutDirty = true;

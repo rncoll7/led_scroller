@@ -41,7 +41,7 @@ body {
   position: fixed;
   inset: 0;
   overflow: hidden;
-  background: #191919;
+  background: #000000;
   contain: strict;
   /* No double-tap zoom, so dblclick reaches the page and taps have no delay. */
   touch-action: manipulation;
@@ -93,6 +93,51 @@ body.idle #stage {
 body.idle .toolbar {
   opacity: 0;
   pointer-events: none;
+}
+
+/* Scoreboard: the toolbar sits inside the (rotated) sign, in a row centered at the bottom, always visible. */
+body.placar .toolbar,
+body.placar.idle .toolbar {
+  position: absolute;
+  top: auto;
+  bottom: 6px;
+  left: 50%;
+  right: auto;
+  flex-direction: row;
+  gap: 6px;
+  transform: translateX(-50%);
+  opacity: 1;
+  pointer-events: auto;
+}
+
+body.placar #btn-pause {
+  display: none;
+}
+
+/* Small enough for the row to fit in the gap between two-digit scores. */
+body.placar .toolbar .icon-btn {
+  width: 38px;
+  height: 38px;
+}
+
+/* Locked scoreboard: no way into the settings without the PIN. */
+body.locked #btn-settings {
+  display: none;
+}
+
+/* Hold to unlock: the button fills up over the 2 s it has to be held. */
+#btn-unlock.holding {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--accent-ink);
+  transition: background 2s linear, color 2s linear;
+}
+
+/* Armed reset: the next tap zeroes the score. */
+#btn-reset-score.armed {
+  border-color: #ff5a4f;
+  background: #b3261e;
+  color: #fff;
 }
 
 .icon-btn {
@@ -569,4 +614,51 @@ textarea:focus,
   .toolbar {
     transition: none;
   }
+}
+
+/* Panel sections that only apply to one mode. */
+body.placar .section[data-only='letreiro'],
+body:not(.placar) .section[data-only='placar'] {
+  display: none;
+}
+
+.score-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 8px;
+}
+
+.btn-row {
+  display: flex;
+  gap: 8px;
+}
+
+.btn-row > .btn {
+  flex: 1;
+}
+
+.btn[aria-pressed='true'] {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+.pin-input {
+  width: 100%;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--field);
+  color: var(--text);
+  font: inherit;
+  font-size: 32px;
+  letter-spacing: 0.6em;
+  text-align: center;
+}
+
+.pin-error {
+  min-height: 1.3em;
+  margin: 0;
+  color: #ff6b61;
+  font-size: 14px;
 }
