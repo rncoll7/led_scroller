@@ -5,8 +5,10 @@ import { buildPanel } from './panel';
 import { applyUpdate, checkForUpdate, setupInstall, setupServiceWorker, type InstallMode } from './pwa';
 import { createRenderer, type Rgb } from './renderer';
 import { advance, composeFrame, loopLength, startOffset, type TextBitmap } from './scroll';
+import { drawScoreboard, scoreView } from './scoreboard';
 import { DEFAULT_SETTINGS, type Settings } from './settings';
 import { storage } from './storage';
+import { addPoint, BEACH, matchState, newMatch, QUICK, undo, type Match } from './volei';
 
 /** The buttons fade out after this long without interaction, leaving only the sign. */
 const IDLE_MS = 3500;
@@ -30,6 +32,11 @@ const themeColor = document.querySelector<HTMLMetaElement>('meta[name="theme-col
 const stats = new URLSearchParams(location.search).has('stats') ? $('stats') : null;
 
 const settings = storage.settings();
+
+// Preview of the scoreboard until it gets its own mode: ?placar (beach) or ?placar=rapida (12 points).
+// Keys A and L score for the left and right team, Z undoes.
+const placarParam = new URLSearchParams(location.search).get('placar');
+let match: Match | null = placarParam === null ? null : newMatch(placarParam === 'rapida' ? QUICK : BEACH, 'a');
 
 let text: TextBitmap = { cols: 1, rows: 1, data: new Uint8Array(1) };
 let grid: LedGrid = ledGrid(1, 1, 1);
@@ -101,6 +108,15 @@ function tick(now: number): void {
     applyStyle();
     styleDirty = false;
     needsDraw = true;
+  }
+
+  if (match) {
+    if (needsDraw) {
+      drawScoreboard(frame, grid.cols, grid.rows, scoreView(matchState(match)));
+      renderer.draw(frame);
+      needsDraw = false;
+    }
+    return;
   }
 
   const moving = !paused && settings.speed > 0 && !document.hidden;
@@ -284,6 +300,14 @@ window.addEventListener('keydown', (event) => {
   const target = event.target as HTMLElement;
   if (target.closest('input, textarea')) {
     if (event.key === 'Escape') target.blur();
+    return;
+  }
+  const key = event.key.toLowerCase();
+  if (match && (key === 'a' || key === 'l' || key === 'z')) {
+    match = key === 'z' ? undo(match) : addPoint(match, key === 'a' ? 'a' : 'b');
+    needsDraw = true;
+    schedule();
+    event.preventDefault();
     return;
   }
   switch (event.key) {
