@@ -41,7 +41,7 @@ body {
   position: fixed;
   inset: 0;
   overflow: hidden;
-  background: #191919;
+  background: #000000;
   contain: strict;
   /* No double-tap zoom, so dblclick reaches the page and taps have no delay. */
   touch-action: manipulation;
@@ -95,16 +95,17 @@ body.idle .toolbar {
   pointer-events: none;
 }
 
-/* Scoreboard: the toolbar sits inside the (rotated) sign, stacked over the divider, always visible. */
+/* Scoreboard: the toolbar sits inside the (rotated) sign, in a row centered at the bottom, always visible. */
 body.placar .toolbar,
 body.placar.idle .toolbar {
   position: absolute;
-  top: 50%;
+  top: auto;
+  bottom: 6px;
   left: 50%;
   right: auto;
-  flex-direction: column;
-  gap: 8px;
-  transform: translate(-50%, -50%);
+  flex-direction: row;
+  gap: 6px;
+  transform: translateX(-50%);
   opacity: 1;
   pointer-events: auto;
 }
@@ -113,9 +114,10 @@ body.placar #btn-pause {
   display: none;
 }
 
+/* Small enough for the row to fit in the gap between two-digit scores. */
 body.placar .toolbar .icon-btn {
-  width: 42px;
-  height: 42px;
+  width: 38px;
+  height: 38px;
 }
 
 /* Locked scoreboard: no way into the settings without the PIN. */
