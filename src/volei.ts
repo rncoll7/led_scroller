@@ -12,6 +12,12 @@ export interface Rules {
   decidingSwitchEvery: number;
   /** Timeouts each team may call per set. */
   timeouts: number;
+  /**
+   * Once both teams reach `tieAt`, the two-point lead no longer applies and the first to `tieTarget`
+   * takes the set. 0 turns it off.
+   */
+  tieAt: number;
+  tieTarget: number;
 }
 
 /** FIVB beach volleyball. Every set is won by a two-point lead, with no cap. */
@@ -22,10 +28,13 @@ export const BEACH: Readonly<Rules> = {
   switchEvery: 7,
   decidingSwitchEvery: 5,
   timeouts: 1,
+  tieAt: 0,
+  tieTarget: 0,
 };
 
 /**
- * Quick game: a single set to 12, still won by two. Changing sides every 4 points keeps the
+ * Quick game: a single set to 12, won by two, except that at 11–11 it goes straight to 14:
+ * three more points, first one there wins (14–13 is enough). Changing sides every 4 points keeps the
  * same third-of-the-set rhythm as the official sets (7 of 21, 5 of 15).
  */
 export const QUICK: Readonly<Rules> = {
@@ -35,7 +44,22 @@ export const QUICK: Readonly<Rules> = {
   switchEvery: 4,
   decidingSwitchEvery: 4,
   timeouts: 1,
+  tieAt: 11,
+  tieTarget: 14,
 };
+
+/** Who takes the set at this score, if anyone. */
+export function setWinner(rules: Rules, deciding: boolean, a: number, b: number): Team | null {
+  if (rules.tieAt > 0 && a >= rules.tieAt && b >= rules.tieAt) {
+    if (a >= rules.tieTarget) return 'a';
+    if (b >= rules.tieTarget) return 'b';
+    return null;
+  }
+  const target = deciding ? rules.decidingPoints : rules.points;
+  if (a >= target && a - b >= 2) return 'a';
+  if (b >= target && b - a >= 2) return 'b';
+  return null;
+}
 
 /**
  * Everything that happened in the match, in order. The score is always worked out from this list,
@@ -116,9 +140,7 @@ export function matchState(match: Match): MatchState {
     server = event.team;
     setJustEnded = switchSides = false;
 
-    const target = deciding ? rules.decidingPoints : rules.points;
-    const lead = set[event.team] - set[other(event.team)];
-    if (set[event.team] >= target && lead >= 2) {
+    if (setWinner(rules, deciding, set.a, set.b) === event.team) {
       set.winner = event.team;
       setsWon[event.team]++;
       if (setsWon[event.team] === rules.setsToWin) {
@@ -143,10 +165,9 @@ export function matchState(match: Match): MatchState {
   const current = sets[setNumber - 1];
   let setPoint: Team | null = null;
   if (!winner) {
-    const target = isDeciding(rules, setNumber) ? rules.decidingPoints : rules.points;
-    for (const team of ['a', 'b'] as const) {
-      if (current[team] + 1 >= target && current[team] + 1 - current[other(team)] >= 2) setPoint = team;
-    }
+    const deciding = isDeciding(rules, setNumber);
+    if (setWinner(rules, deciding, current.a + 1, current.b) === 'a') setPoint = 'a';
+    else if (setWinner(rules, deciding, current.a, current.b + 1) === 'b') setPoint = 'b';
   }
   const matchPoint = setPoint && setsWon[setPoint] + 1 === rules.setsToWin ? setPoint : null;
 
@@ -180,7 +201,8 @@ export function sanitizeMatch(raw: unknown): Match {
   const rules = { ...BEACH };
   for (const key of Object.keys(BEACH) as (keyof Rules)[]) {
     const value = rulesIn[key];
-    if (typeof value === 'number' && Number.isInteger(value) && value >= 1 && value <= 99) rules[key] = value;
+    const min = key === 'tieAt' || key === 'tieTarget' ? 0 : 1; // 0 turns the tie rule off
+    if (typeof value === 'number' && Number.isInteger(value) && value >= min && value <= 99) rules[key] = value;
   }
   const events = Array.isArray(input.events)
     ? input.events.filter(

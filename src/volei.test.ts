@@ -190,7 +190,7 @@ describe('quick game (QUICK)', () => {
     expect(state.sets).toEqual([{ a: 12, b: 0, winner: 'a' }]);
   });
 
-  it('still needs a two-point lead', () => {
+  it('at 11–11 goes to 14 instead of a two-point lead', () => {
     let match = play(newMatch(QUICK, 'a'), times('a', 11) + times('b', 11) + 'a');
     expect(matchState(match).winner).toBeNull();
     match = play(match, 'bbb');
@@ -208,5 +208,45 @@ describe('quick game (QUICK)', () => {
   it('survives a save and reload with its rules', () => {
     const match = play(newMatch(QUICK, 'b'), 'ab');
     expect(sanitizeMatch(JSON.parse(JSON.stringify(match)))).toEqual(match);
+  });
+});
+
+describe('quick game tie at 11', () => {
+  const tied = () => play(newMatch(QUICK, 'a'), times('a', 11) + times('b', 11));
+
+  it('wins 12–10 the normal way when there was no tie', () => {
+    const state = matchState(play(newMatch(QUICK, 'a'), times('a', 10) + times('b', 10) + 'aa'));
+    expect(state.winner).toBe('a');
+    expect(state.sets[0]).toMatchObject({ a: 12, b: 10 });
+  });
+
+  it('does not end at 13–11 after the tie', () => {
+    const state = matchState(play(tied(), 'aa'));
+    expect(state.winner).toBeNull();
+    expect(state.setPoint).toBe('a');
+  });
+
+  it('ends at 14–13, a one-point lead', () => {
+    const state = matchState(play(tied(), 'ababa'));
+    expect(state.sets[0]).toMatchObject({ a: 14, b: 13, winner: 'a' });
+    expect(state.winner).toBe('a');
+  });
+
+  it('shows match point for both sides at 13–13', () => {
+    const match = play(tied(), 'abab');
+    expect(matchState(match).matchPoint).not.toBeNull();
+    expect(matchState(addPoint(match, 'b')).winner).toBe('b');
+  });
+
+  it('keeps the tie rule through a save and reload', () => {
+    const restored = sanitizeMatch(JSON.parse(JSON.stringify(tied())));
+    expect(restored.rules).toMatchObject({ tieAt: 11, tieTarget: 14 });
+  });
+
+  it('leaves beach sets without a cap', () => {
+    // 20–20 in a beach set keeps the two-point lead: 21–20 goes on, 22–20 ends it.
+    const match = play(newMatch(BEACH, 'a'), times('a', 20) + times('b', 20) + 'a');
+    expect(matchState(match).sets[0].winner).toBeNull();
+    expect(matchState(play(match, 'a')).sets[0]).toEqual({ a: 22, b: 20, winner: 'a' });
   });
 });
