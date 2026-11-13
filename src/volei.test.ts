@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { addPoint, BEACH, callTimeout, matchState, newMatch, sanitizeMatch, setServer, undo, type Match, type Team } from './volei';
+import { addPoint, BEACH, callTimeout, QUICK, matchState, newMatch, sanitizeMatch, setServer, undo, type Match, type Team } from './volei';
 
 /** Plays points in order: 'aab' is two points for A, then one for B. */
 function play(match: Match, rallies: string): Match {
@@ -176,6 +176,37 @@ describe('sanitizeMatch', () => {
 
   it('round-trips through JSON', () => {
     const match = play(newMatch(BEACH, 'a'), 'abba');
+    expect(sanitizeMatch(JSON.parse(JSON.stringify(match)))).toEqual(match);
+  });
+});
+
+describe('quick game (QUICK)', () => {
+  it('is a single set to 12 that ends the match', () => {
+    let match = play(newMatch(QUICK, 'a'), times('a', 11));
+    expect(matchState(match).matchPoint).toBe('a');
+    match = play(match, 'a');
+    const state = matchState(match);
+    expect(state.winner).toBe('a');
+    expect(state.sets).toEqual([{ a: 12, b: 0, winner: 'a' }]);
+  });
+
+  it('still needs a two-point lead', () => {
+    let match = play(newMatch(QUICK, 'a'), times('a', 11) + times('b', 11) + 'a');
+    expect(matchState(match).winner).toBeNull();
+    match = play(match, 'bbb');
+    expect(matchState(match).winner).toBe('b');
+    expect(matchState(match).sets[0]).toMatchObject({ a: 12, b: 14 });
+  });
+
+  it('changes sides every 4 points', () => {
+    const match = play(newMatch(QUICK, 'a'), 'abb');
+    expect(matchState(match).switchSides).toBe(false);
+    expect(matchState(play(match, 'a')).switchSides).toBe(true);
+    expect(matchState(play(match, 'aaaaa')).switchSides).toBe(true); // 8
+  });
+
+  it('survives a save and reload with its rules', () => {
+    const match = play(newMatch(QUICK, 'b'), 'ab');
     expect(sanitizeMatch(JSON.parse(JSON.stringify(match)))).toEqual(match);
   });
 });

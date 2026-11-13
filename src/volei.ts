@@ -25,6 +25,19 @@ export const BEACH: Readonly<Rules> = {
 };
 
 /**
+ * Quick game: a single set to 12, still won by two. Changing sides every 4 points keeps the
+ * same third-of-the-set rhythm as the official sets (7 of 21, 5 of 15).
+ */
+export const QUICK: Readonly<Rules> = {
+  setsToWin: 1,
+  points: 12,
+  decidingPoints: 12,
+  switchEvery: 4,
+  decidingSwitchEvery: 4,
+  timeouts: 1,
+};
+
+/**
  * Everything that happened in the match, in order. The score is always worked out from this list,
  * so undo is just dropping the last event and a saved match cannot hold an impossible score.
  * `serve` sets who serves next: the coin toss, or a fix when the operator got it wrong.
