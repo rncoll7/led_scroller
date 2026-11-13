@@ -16,6 +16,8 @@ const IDLE_MS = 3500;
 const MAX_STEP_S = 0.1;
 /** A second tap on the scoreboard this soon after a point is a double tap, not another point. */
 const DOUBLE_TAP_MS = 300;
+/** The reset button waits this long for the second tap that confirms it. */
+const RESET_CONFIRM_MS = 3000;
 
 const LAYOUT_KEYS = new Set<keyof Settings>(['rows', 'rotation']);
 const TEXT_KEYS = new Set<keyof Settings>(['rows', 'text', 'font', 'bold', 'textSize']);
@@ -31,6 +33,7 @@ const pauseButton = $<HTMLButtonElement>('btn-pause');
 const fullscreenButton = $<HTMLButtonElement>('btn-fullscreen');
 const installButton = $<HTMLButtonElement>('btn-install');
 const undoButton = $<HTMLButtonElement>('btn-undo');
+const resetScoreButton = $<HTMLButtonElement>('btn-reset-score');
 const toolbar = $('toolbar');
 const themeColor = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]');
 const stats = new URLSearchParams(location.search).has('stats') ? $('stats') : null;
@@ -44,6 +47,10 @@ let match: Match | null = placarParam === null ? null : newMatch(placarParam ===
 /** The team on the left half of the scoreboard. */
 let leftTeam: Team = 'a';
 let lastPointAt = 0;
+/** The match as it was before the last reset, so undo can bring it back. */
+let beforeReset: Match | null = null;
+let resetArmed = false;
+let resetTimer = 0;
 
 let text: TextBitmap = { cols: 1, rows: 1, data: new Uint8Array(1) };
 let grid: LedGrid = ledGrid(1, 1, 1);
@@ -120,7 +127,9 @@ function tick(now: number): void {
 
   if (match) {
     if (needsDraw) {
-      drawScoreboard(frame, grid.cols, grid.rows, scoreView(matchState(match), leftTeam));
+      const view = scoreView(matchState(match), leftTeam);
+      if (resetArmed) view.banner = ['ZERAR PLACAR?', 'ZERAR?'];
+      drawScoreboard(frame, grid.cols, grid.rows, view);
       renderer.draw(frame);
       needsDraw = false;
     }
@@ -198,6 +207,8 @@ function scorePoint(side: Side): void {
   if (next === match) return; // the match is over
   lastPointAt = now;
   match = next;
+  beforeReset = null;
+  disarmReset();
   const state = matchState(match);
   // A longer buzz for what the operator has to call out: end of a set or match, change of sides.
   vibrate(state.winner || state.setJustEnded ? [80, 60, 80] : state.switchSides ? [40, 40, 40] : 25);
@@ -207,13 +218,51 @@ function scorePoint(side: Side): void {
 
 function undoPoint(): void {
   if (!match) return;
-  const previous = undo(match);
+  disarmReset();
+  // Right after a reset, undo brings the whole match back.
+  const previous = beforeReset ?? undo(match);
+  beforeReset = null;
   if (previous === match) return;
   match = previous;
   lastPointAt = 0;
   vibrate(15);
   needsDraw = true;
   schedule();
+}
+
+function redraw(): void {
+  needsDraw = true;
+  schedule();
+}
+
+function disarmReset(): void {
+  if (!resetArmed) return;
+  resetArmed = false;
+  clearTimeout(resetTimer);
+  resetScoreButton.classList.remove('armed');
+  redraw();
+}
+
+/** First tap arms the button and asks on the sign; a second tap within RESET_CONFIRM_MS zeroes the score. */
+function resetScore(): void {
+  if (!match) return;
+  if (!resetArmed) {
+    resetArmed = true;
+    resetScoreButton.classList.add('armed');
+    resetTimer = window.setTimeout(disarmReset, RESET_CONFIRM_MS);
+    vibrate(15);
+    redraw();
+    return;
+  }
+  disarmReset();
+  // Same rules and the same first server: a new game between the same teams.
+  const toss = match.events.find((event) => event.type === 'serve')?.team ?? null;
+  const fresh = newMatch(match.rules, toss);
+  if (match.events.length > fresh.events.length) beforeReset = match;
+  match = fresh;
+  lastPointAt = 0;
+  vibrate([60, 40, 60]);
+  redraw();
 }
 
 /** Which half of the scoreboard, as the viewer sees it, is under a point on the screen. */
@@ -343,11 +392,13 @@ pauseButton.addEventListener('click', () => {
   showControls();
 });
 undoButton.addEventListener('click', undoPoint);
+resetScoreButton.addEventListener('click', resetScore);
 if (match) {
   // On the scoreboard the buttons live inside the sign, so they turn with it, stay visible
   // (a tap on the sign scores instead of showing them) and sit over the divider between the scores.
   document.body.classList.add('placar');
   undoButton.hidden = false;
+  resetScoreButton.hidden = false;
   sign.append(toolbar);
   // The toolbar is now inside the stage: a press on a button must not also score on the half under it.
   for (const type of ['click', 'dblclick'] as const) toolbar.addEventListener(type, (event) => event.stopPropagation());

@@ -113,6 +113,18 @@ body.placar #btn-pause {
   display: none;
 }
 
+body.placar .toolbar .icon-btn {
+  width: 42px;
+  height: 42px;
+}
+
+/* Armed reset: the next tap zeroes the score. */
+#btn-reset-score.armed {
+  border-color: #ff5a4f;
+  background: #b3261e;
+  color: #fff;
+}
+
 .icon-btn {
   display: grid;
   place-items: center;

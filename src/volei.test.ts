@@ -198,11 +198,12 @@ describe('quick game (QUICK)', () => {
     expect(matchState(match).sets[0]).toMatchObject({ a: 12, b: 14 });
   });
 
-  it('changes sides every 4 points', () => {
-    const match = play(newMatch(QUICK, 'a'), 'abb');
-    expect(matchState(match).switchSides).toBe(false);
-    expect(matchState(play(match, 'a')).switchSides).toBe(true);
-    expect(matchState(play(match, 'aaaaa')).switchSides).toBe(true); // 8
+  it('never changes sides', () => {
+    let match = newMatch(QUICK, 'a');
+    for (const team of 'abababababababababab') {
+      match = addPoint(match, team as Team);
+      expect(matchState(match).switchSides).toBe(false);
+    }
   });
 
   it('survives a save and reload with its rules', () => {

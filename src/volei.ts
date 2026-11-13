@@ -7,7 +7,7 @@ export interface Rules {
   points: number;
   /** Points to win the deciding set. */
   decidingPoints: number;
-  /** Teams change sides every this many points added up (regular sets / deciding set). */
+  /** Teams change sides every this many points added up (regular sets / deciding set). 0: never. */
   switchEvery: number;
   decidingSwitchEvery: number;
   /** Timeouts each team may call per set. */
@@ -34,15 +34,14 @@ export const BEACH: Readonly<Rules> = {
 
 /**
  * Quick game: a single set to 12, won by two, except that at 11–11 it goes straight to 14:
- * three more points, first one there wins (14–13 is enough). Changing sides every 4 points keeps the
- * same third-of-the-set rhythm as the official sets (7 of 21, 5 of 15).
+ * three more points, first one there wins (14–13 is enough). Nobody changes sides.
  */
 export const QUICK: Readonly<Rules> = {
   setsToWin: 1,
   points: 12,
   decidingPoints: 12,
-  switchEvery: 4,
-  decidingSwitchEvery: 4,
+  switchEvery: 0,
+  decidingSwitchEvery: 0,
   timeouts: 1,
   tieAt: 11,
   tieTarget: 14,
@@ -158,7 +157,7 @@ export function matchState(match: Match): MatchState {
       continue;
     }
     const every = deciding ? rules.decidingSwitchEvery : rules.switchEvery;
-    switchSides = (set.a + set.b) % every === 0;
+    switchSides = every > 0 && (set.a + set.b) % every === 0;
   }
 
   const setNumber = sets.length;
@@ -201,7 +200,8 @@ export function sanitizeMatch(raw: unknown): Match {
   const rules = { ...BEACH };
   for (const key of Object.keys(BEACH) as (keyof Rules)[]) {
     const value = rulesIn[key];
-    const min = key === 'tieAt' || key === 'tieTarget' ? 0 : 1; // 0 turns the tie rule off
+    const optional: (keyof Rules)[] = ['tieAt', 'tieTarget', 'switchEvery', 'decidingSwitchEvery'];
+    const min = optional.includes(key) ? 0 : 1; // 0 turns these rules off
     if (typeof value === 'number' && Number.isInteger(value) && value >= min && value <= 99) rules[key] = value;
   }
   const events = Array.isArray(input.events)
