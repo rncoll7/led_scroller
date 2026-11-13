@@ -53,3 +53,27 @@ export function ledGrid(width: number, height: number, rows: number): LedGrid {
   const cols = Math.max(1, Math.floor(width / pitch + 1e-6));
   return { cols, rows, pitch, offsetX: (width - cols * pitch) / 2 };
 }
+
+/**
+ * Where a point on the screen lands on the sign, in the sign's own coordinates (CSS px, before rotation).
+ * The inverse of the transform in signLayout(), so a tap on the left half of what the viewer sees
+ * is on the left half of the sign whichever way the phone is held.
+ */
+export function toSign(
+  turns: QuarterTurns,
+  screenWidth: number,
+  screenHeight: number,
+  x: number,
+  y: number,
+): { x: number; y: number } {
+  switch (turns) {
+    case 0:
+      return { x, y };
+    case 1:
+      return { x: y, y: screenWidth - x };
+    case 2:
+      return { x: screenWidth - x, y: screenHeight - y };
+    case 3:
+      return { x: screenHeight - y, y: x };
+  }
+}

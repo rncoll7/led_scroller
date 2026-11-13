@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ledGrid, quarterTurns, signLayout } from './layout';
+import { ledGrid, quarterTurns, signLayout, toSign } from './layout';
 
 describe('quarterTurns', () => {
   it('auto keeps landscape screens upright and turns portrait screens sideways', () => {
@@ -42,5 +42,39 @@ describe('ledGrid', () => {
 
   it('does not lose a column to floating point error', () => {
     expect(ledGrid(100, 100, 30).cols).toBe(30);
+  });
+});
+
+describe('toSign', () => {
+  // A 400×800 portrait phone: with turns = 1 the sign is 800×400 and its left edge is at the top of the screen.
+  it('leaves an unrotated sign alone', () => {
+    expect(toSign(0, 800, 400, 10, 20)).toEqual({ x: 10, y: 20 });
+  });
+
+  it('maps the top of a portrait screen to the left of a sign turned clockwise', () => {
+    expect(toSign(1, 400, 800, 200, 50)).toEqual({ x: 50, y: 200 });
+    expect(toSign(1, 400, 800, 390, 0)).toEqual({ x: 0, y: 10 }); // top-right corner of the screen is the sign's top-left
+  });
+
+  it('flips both axes upside down', () => {
+    expect(toSign(2, 800, 400, 10, 20)).toEqual({ x: 790, y: 380 });
+  });
+
+  it('maps the bottom of a portrait screen to the left of a sign turned counter-clockwise', () => {
+    expect(toSign(3, 400, 800, 0, 790)).toEqual({ x: 10, y: 0 });
+  });
+
+  it('inverts the CSS transform of signLayout for every rotation', () => {
+    for (const rotation of ['0', '90', '180', '270'] as const) {
+      const layout = signLayout(400, 800, rotation);
+      // Forward: where the transform sends the sign point (30, 70).
+      const [sx, sy] = [
+        [30, 70],
+        [400 - 70, 30],
+        [400 - 30, 800 - 70],
+        [70, 800 - 30],
+      ][layout.turns];
+      expect(toSign(layout.turns, 400, 800, sx, sy)).toEqual({ x: 30, y: 70 });
+    }
   });
 });

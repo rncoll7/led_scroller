@@ -95,6 +95,24 @@ body.idle .toolbar {
   pointer-events: none;
 }
 
+/* Scoreboard: the toolbar sits inside the (rotated) sign, stacked over the divider, always visible. */
+body.placar .toolbar,
+body.placar.idle .toolbar {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  right: auto;
+  flex-direction: column;
+  gap: 8px;
+  transform: translate(-50%, -50%);
+  opacity: 1;
+  pointer-events: auto;
+}
+
+body.placar #btn-pause {
+  display: none;
+}
+
 .icon-btn {
   display: grid;
   place-items: center;

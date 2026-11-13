@@ -1,6 +1,6 @@
 import './style.css';
 import { renderText } from './bitmap';
-import { ledGrid, signLayout, type LedGrid } from './layout';
+import { ledGrid, signLayout, toSign, type LedGrid, type SignLayout } from './layout';
 import { buildPanel } from './panel';
 import { applyUpdate, checkForUpdate, setupInstall, setupServiceWorker, type InstallMode } from './pwa';
 import { createRenderer, type Rgb } from './renderer';
@@ -8,12 +8,14 @@ import { advance, composeFrame, loopLength, startOffset, type TextBitmap } from 
 import { drawScoreboard, scoreView } from './scoreboard';
 import { DEFAULT_SETTINGS, type Settings } from './settings';
 import { storage } from './storage';
-import { addPoint, BEACH, matchState, newMatch, QUICK, undo, type Match } from './volei';
+import { addPoint, BEACH, matchState, newMatch, other, QUICK, undo, type Match, type Team } from './volei';
 
 /** The buttons fade out after this long without interaction, leaving only the sign. */
 const IDLE_MS = 3500;
 /** Longest time step taken in one frame, so a stall does not make the text jump ahead. */
 const MAX_STEP_S = 0.1;
+/** A second tap on the scoreboard this soon after a point is a double tap, not another point. */
+const DOUBLE_TAP_MS = 300;
 
 const LAYOUT_KEYS = new Set<keyof Settings>(['rows', 'rotation']);
 const TEXT_KEYS = new Set<keyof Settings>(['rows', 'text', 'font', 'bold', 'textSize']);
@@ -28,6 +30,8 @@ const settingsButton = $<HTMLButtonElement>('btn-settings');
 const pauseButton = $<HTMLButtonElement>('btn-pause');
 const fullscreenButton = $<HTMLButtonElement>('btn-fullscreen');
 const installButton = $<HTMLButtonElement>('btn-install');
+const undoButton = $<HTMLButtonElement>('btn-undo');
+const toolbar = $('toolbar');
 const themeColor = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]');
 const stats = new URLSearchParams(location.search).has('stats') ? $('stats') : null;
 
@@ -37,9 +41,13 @@ const settings = storage.settings();
 // Keys A and L score for the left and right team, Z undoes.
 const placarParam = new URLSearchParams(location.search).get('placar');
 let match: Match | null = placarParam === null ? null : newMatch(placarParam === 'rapida' ? QUICK : BEACH, 'a');
+/** The team on the left half of the scoreboard. */
+let leftTeam: Team = 'a';
+let lastPointAt = 0;
 
 let text: TextBitmap = { cols: 1, rows: 1, data: new Uint8Array(1) };
 let grid: LedGrid = ledGrid(1, 1, 1);
+let layout: SignLayout | null = null;
 let frame = new Uint8Array(1);
 let period = 1;
 let offset = 0;
@@ -66,7 +74,7 @@ function applyLayout(): boolean {
   const width = stage.clientWidth;
   const height = stage.clientHeight;
   if (!width || !height) return false;
-  const layout = signLayout(width, height, settings.rotation);
+  layout = signLayout(width, height, settings.rotation);
   sign.style.width = `${layout.width}px`;
   sign.style.height = `${layout.height}px`;
   sign.style.transform = layout.transform;
@@ -112,7 +120,7 @@ function tick(now: number): void {
 
   if (match) {
     if (needsDraw) {
-      drawScoreboard(frame, grid.cols, grid.rows, scoreView(matchState(match)));
+      drawScoreboard(frame, grid.cols, grid.rows, scoreView(matchState(match), leftTeam));
       renderer.draw(frame);
       needsDraw = false;
     }
@@ -168,6 +176,52 @@ function change<K extends keyof Settings>(key: K, value: Settings[K]): void {
   clearTimeout(saveTimer);
   saveTimer = window.setTimeout(() => storage.saveSettings(settings), 300);
   schedule();
+}
+
+// ---- Scoreboard ----
+
+type Side = 'left' | 'right';
+
+function vibrate(pattern: number | number[]): void {
+  try {
+    navigator.vibrate?.(pattern);
+  } catch {
+    // Not every browser lets a page vibrate; the score on screen is the feedback that counts.
+  }
+}
+
+function scorePoint(side: Side): void {
+  if (!match) return;
+  const now = performance.now();
+  if (now - lastPointAt < DOUBLE_TAP_MS) return;
+  const next = addPoint(match, side === 'left' ? leftTeam : other(leftTeam));
+  if (next === match) return; // the match is over
+  lastPointAt = now;
+  match = next;
+  const state = matchState(match);
+  // A longer buzz for what the operator has to call out: end of a set or match, change of sides.
+  vibrate(state.winner || state.setJustEnded ? [80, 60, 80] : state.switchSides ? [40, 40, 40] : 25);
+  needsDraw = true;
+  schedule();
+}
+
+function undoPoint(): void {
+  if (!match) return;
+  const previous = undo(match);
+  if (previous === match) return;
+  match = previous;
+  lastPointAt = 0;
+  vibrate(15);
+  needsDraw = true;
+  schedule();
+}
+
+/** Which half of the scoreboard, as the viewer sees it, is under a point on the screen. */
+function sideAt(clientX: number, clientY: number): Side | null {
+  if (!layout) return null;
+  const rect = stage.getBoundingClientRect();
+  const point = toSign(layout.turns, rect.width, rect.height, clientX - rect.left, clientY - rect.top);
+  return point.x < layout.width / 2 ? 'left' : 'right';
 }
 
 // ---- Controls ----
@@ -267,12 +321,17 @@ const panel = buildPanel($('panel-controls'), settings, change, {
   wakeLock: 'wakeLock' in navigator,
 });
 
-stage.addEventListener('click', () => {
+stage.addEventListener('click', (event) => {
   if (isPanelOpen()) setPanel(false);
-  else if (document.body.classList.contains('idle')) showControls();
+  else if (match) {
+    const side = sideAt(event.clientX, event.clientY);
+    if (side) scorePoint(side);
+  } else if (document.body.classList.contains('idle')) showControls();
   else hideControls();
 });
-stage.addEventListener('dblclick', toggleFullscreen);
+stage.addEventListener('dblclick', () => {
+  if (!match) toggleFullscreen(); // on the scoreboard a quick second tap is a point, not full screen
+});
 stage.addEventListener('pointermove', (event) => {
   if (event.pointerType === 'mouse') showControls();
 });
@@ -283,6 +342,17 @@ pauseButton.addEventListener('click', () => {
   togglePause();
   showControls();
 });
+undoButton.addEventListener('click', undoPoint);
+if (match) {
+  // On the scoreboard the buttons live inside the sign, so they turn with it, stay visible
+  // (a tap on the sign scores instead of showing them) and sit over the divider between the scores.
+  document.body.classList.add('placar');
+  undoButton.hidden = false;
+  sign.append(toolbar);
+  // The toolbar is now inside the stage: a press on a button must not also score on the half under it.
+  for (const type of ['click', 'dblclick'] as const) toolbar.addEventListener(type, (event) => event.stopPropagation());
+}
+
 fullscreenButton.hidden = !document.fullscreenEnabled;
 fullscreenButton.addEventListener('click', toggleFullscreen);
 document.addEventListener('fullscreenchange', () => {
@@ -304,9 +374,8 @@ window.addEventListener('keydown', (event) => {
   }
   const key = event.key.toLowerCase();
   if (match && (key === 'a' || key === 'l' || key === 'z')) {
-    match = key === 'z' ? undo(match) : addPoint(match, key === 'a' ? 'a' : 'b');
-    needsDraw = true;
-    schedule();
+    if (key === 'z') undoPoint();
+    else scorePoint(key === 'a' ? 'left' : 'right');
     event.preventDefault();
     return;
   }
