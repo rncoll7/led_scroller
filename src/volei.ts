@@ -47,6 +47,9 @@ export const QUICK: Readonly<Rules> = {
   tieTarget: 14,
 };
 
+/** The rules for each game the scoreboard offers, by the name stored in the settings. */
+export const GAMES: Readonly<Record<'praia' | 'rapida', Readonly<Rules>>> = { praia: BEACH, rapida: QUICK };
+
 /** Who takes the set at this score, if anyone. */
 export function setWinner(rules: Rules, deciding: boolean, a: number, b: number): Team | null {
   if (rules.tieAt > 0 && a >= rules.tieAt && b >= rules.tieAt) {

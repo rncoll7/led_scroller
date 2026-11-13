@@ -5,6 +5,7 @@ import {
   type ChoiceKey,
   type ColorKey,
   type RangeKey,
+  type Mode,
   type Settings,
   type ToggleKey,
 } from './settings';
@@ -18,9 +19,32 @@ type Control =
 
 const percent = (value: number) => `${value}%`;
 
-const SECTIONS: { title: string; controls: Control[] }[] = [
+interface Section {
+  title: string;
+  controls: Control[];
+  /** Shown only in this mode. */
+  only?: Mode;
+  /** Id of a block already in the page that goes at the end of the section (buttons that are not settings). */
+  extra?: string;
+}
+
+const SECTIONS: Section[] = [
+  {
+    title: 'Modo',
+    controls: [{ type: 'choice', key: 'mode', label: 'Mostrar', options: [['letreiro', 'Letreiro'], ['placar', 'Placar de vôlei']] }],
+  },
+  {
+    title: 'Placar',
+    only: 'placar',
+    controls: [
+      { type: 'choice', key: 'game', label: 'Jogo', options: [['praia', 'Praia · 21'], ['rapida', 'Rápida · 12']] },
+      { type: 'toggle', key: 'swapSides', label: 'Inverter lados' },
+    ],
+    extra: 'score-actions',
+  },
   {
     title: 'Mensagem',
+    only: 'letreiro',
     controls: [
       { type: 'text', key: 'text', label: 'Texto' },
       { type: 'choice', key: 'font', label: 'Fonte', options: [['mono', 'Mono'], ['sans', 'Sans'], ['serif', 'Serif']] },
@@ -37,6 +61,7 @@ const SECTIONS: { title: string; controls: Control[] }[] = [
   },
   {
     title: 'Movimento',
+    only: 'letreiro',
     controls: [
       { type: 'range', key: 'speed', label: 'Velocidade', format: (value) => (value === 0 ? 'Parado' : `${value} LEDs/s`) },
       { type: 'choice', key: 'direction', label: 'Direção', options: [['left', '← Esquerda'], ['right', 'Direita →']] },
@@ -104,12 +129,17 @@ export function buildPanel(
       (control) => (control.key !== 'glow' || available.glow) && (control.key !== 'keepAwake' || available.wakeLock),
     );
     if (!controls.length) continue;
-    container.append(element('h2', 'section-title', section.title));
+    const block = element('div', 'section');
+    if (section.only) block.dataset.only = section.only;
+    block.append(element('h2', 'section-title', section.title));
     for (const control of controls) {
       const [node, update] = field(control, emit);
-      container.append(node);
+      block.append(node);
       syncs.push(update);
     }
+    const extra = section.extra && document.getElementById(section.extra);
+    if (extra) block.append(extra);
+    container.append(block);
   }
   sync();
   return { sync };

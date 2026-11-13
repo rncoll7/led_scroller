@@ -1,8 +1,15 @@
 export type Direction = 'left' | 'right';
 export type FontFamily = 'mono' | 'sans' | 'serif';
 export type Rotation = 'auto' | '0' | '90' | '180' | '270';
+export type Mode = 'letreiro' | 'placar';
+/** Which volleyball rules the scoreboard plays: beach (best of 3 to 21) or the quick game to 12. */
+export type Game = 'praia' | 'rapida';
 
 export interface Settings {
+  mode: Mode;
+  game: Game;
+  /** Team B on the left of the scoreboard. */
+  swapSides: boolean;
   text: string;
   led: string;
   background: string;
@@ -22,9 +29,9 @@ export interface Settings {
 }
 
 export type RangeKey = 'speed' | 'rows' | 'textSize' | 'dotSize' | 'glow' | 'dim';
-export type ToggleKey = 'bold' | 'mirror' | 'smooth' | 'keepAwake';
+export type ToggleKey = 'bold' | 'mirror' | 'smooth' | 'keepAwake' | 'swapSides';
 export type ColorKey = 'led' | 'background';
-export type ChoiceKey = 'direction' | 'font' | 'rotation';
+export type ChoiceKey = 'direction' | 'font' | 'rotation' | 'mode' | 'game';
 
 export const MAX_TEXT_LENGTH = 500;
 
@@ -42,9 +49,14 @@ export const CHOICES: { [K in ChoiceKey]: readonly Settings[K][] } = {
   direction: ['left', 'right'],
   font: ['mono', 'sans', 'serif'],
   rotation: ['auto', '0', '90', '180', '270'],
+  mode: ['letreiro', 'placar'],
+  game: ['praia', 'rapida'],
 };
 
 export const DEFAULT_SETTINGS: Readonly<Settings> = {
+  mode: 'letreiro',
+  game: 'praia',
+  swapSides: false,
   text: 'Renan',
   led: '#00ff00',
   background: '#191919',
@@ -94,6 +106,9 @@ export function sanitize(raw: unknown): Settings {
   };
 
   return {
+    mode: choice('mode'),
+    game: choice('game'),
+    swapSides: toggle('swapSides'),
     text: typeof input.text === 'string' ? cleanText(input.text) : d.text,
     led: color('led'),
     background: color('background'),

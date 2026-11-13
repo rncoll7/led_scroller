@@ -54,6 +54,12 @@
           <path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5" />
         </svg>
       </button>
+      <button class="icon-btn" id="btn-unlock" type="button" aria-label="Destravar (segure 2 segundos)" hidden>
+        <svg class="line" viewBox="0 0 24 24" aria-hidden="true">
+          <rect x="5" y="11" width="14" height="9" rx="2" />
+          <path d="M8 11V8a4 4 0 0 1 8 0v3" />
+        </svg>
+      </button>
       <button
         class="icon-btn"
         id="btn-settings"
@@ -80,6 +86,24 @@
       </header>
       <div class="panel-body">
         <div id="panel-controls"></div>
+        <!-- Moved into the "Placar" section of the panel by buildPanel(). -->
+        <div class="score-actions" id="score-actions">
+          <div class="field">
+            <span class="field-head">Quem saca agora</span>
+            <div class="btn-row" role="group" aria-label="Quem saca agora">
+              <button class="btn" id="btn-serve-left" type="button">Esquerda</button>
+              <button class="btn" id="btn-serve-right" type="button">Direita</button>
+            </div>
+          </div>
+          <button class="btn" id="btn-new-match" type="button">Nova partida</button>
+          <button class="btn primary" id="btn-lock" type="button">Travar placar</button>
+          <button class="btn ghost" id="btn-change-pin" type="button" hidden>Trocar PIN</button>
+          <p class="hint">
+            Travado, quem opera só marca pontos, desfaz e zera. Para destravar, segure o cadeado por 2 segundos e
+            digite o PIN. Para o celular não sair do app, ligue também o <strong>Fixar app</strong> do Android ou o
+            <strong>Acesso Guiado</strong> do iPhone.
+          </p>
+        </div>
         <footer class="panel-foot">
           <button class="btn primary" id="btn-install" type="button" hidden>Instalar app</button>
           <button class="btn ghost" id="btn-reset" type="button">Restaurar aparência</button>
@@ -109,6 +133,27 @@
         </ol>
         <button class="btn primary" id="btn-ios-ok" type="button">Entendi</button>
       </div>
+    </section>
+
+    <section class="overlay" id="screen-pin" aria-labelledby="pin-title" hidden>
+      <form class="dialog" id="pin-form" novalidate>
+        <h2 id="pin-title">PIN</h2>
+        <p class="hint" id="pin-hint"></p>
+        <input
+          class="pin-input"
+          id="pin-input"
+          type="password"
+          inputmode="numeric"
+          autocomplete="off"
+          maxlength="4"
+          aria-labelledby="pin-title"
+        />
+        <p class="pin-error" id="pin-error" role="alert"></p>
+        <div class="btn-row">
+          <button class="btn ghost" id="btn-pin-cancel" type="button">Cancelar</button>
+          <button class="btn primary" type="submit">OK</button>
+        </div>
+      </form>
     </section>
 
     <div class="toast" id="toast" role="status" hidden>

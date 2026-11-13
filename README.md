@@ -43,6 +43,23 @@ Instalação e service worker exigem HTTPS (a única exceção é `localhost`). 
 - **Velocidade 0** deixa o letreiro parado, com o texto centralizado quando cabe na tela.
 - Teclado: `Espaço` pausa, `F` tela cheia, `S` configurações, `Esc` fecha o painel.
 
+## Placar de vôlei
+
+Em **Configurações › Modo › Placar de vôlei** o letreiro vira um placar de vôlei de praia, para um celular que fica na mão de quem anota os pontos.
+
+- **Jogos:** *Praia · 21* (melhor de 3, sets até 21, tie-break até 15, vantagem de 2, troca de lado a cada 7 pontos, 5 no tie-break) e *Rápida · 12* (um set até 12 com vantagem de 2; empatou em 11, vai direto a 14 e quem chegar primeiro ganha; sem troca de lado).
+- **Marcar ponto:** toque na metade do placar do time que fez o ponto, como quem olha vê, com o celular deitado ou em pé. Um segundo toque em menos de 0,3 s não conta. Teclado: `A` esquerda, `L` direita, `Z` desfaz.
+- **Botões no meio do placar:** desfazer o último ponto; zerar (o primeiro toque pede confirmação com *ZERAR?*, o segundo zera, e o desfazer traz a partida de volta); tela cheia; configurações.
+- **Na tela:** pontos, sets, uma bola do lado de quem saca e avisos de troca de lado, set point, match point, fim de set e fim de jogo. Quem ganha o ponto passa a sacar; o set 2 começa com quem não sacou primeiro no set 1, e antes do tie-break o placar pede *SAQUE?*.
+- **No painel:** jogo, inverter lados, quem saca agora (sorteio ou correção), nova partida.
+- A partida é salva a cada ponto: recarregar a página ou o celular travar não perde o placar.
+
+### Trava do operador
+
+**Travar placar** (no painel) cria um PIN de 4 números na primeira vez e trava. Travado, só sobram desfazer, zerar, tela cheia e um cadeado: as configurações não abrem (nem pela tecla `S`) e o botão voltar do Android não sai do app. Para destravar, segure o cadeado por 2 segundos e digite o PIN; depois de 5 erros seguidos, espera 30 segundos. A trava continua depois de recarregar.
+
+A trava é do app: ela não impede o botão Home nem a troca de apps, coisa que uma página web não controla. Para isso ligue o **Fixar app** do Android (Configurações › Segurança) ou o **Acesso Guiado** do iPhone (Acessibilidade). Esqueceu o PIN: apague os dados do site no navegador (isso apaga também a partida e as configurações).
+
 ## Desempenho
 
 A versão anterior (canvas-sketch + Tweakpane) desenhava cada LED a cada quadro com `save/translate/arc/fill/restore` e montava uma string de cor por LED. A rolagem andava uma coluna por quadro, então ficava mais rápida em telas de 120 Hz.
@@ -124,6 +141,10 @@ src/
   scroll.ts          laço da mensagem, rolagem por tempo e composição do quadro de LEDs
   layout.ts          rotação do letreiro e grade de LEDs
   pwa.ts             registro do service worker e botão de instalar
+  volei.ts           regras do vôlei de praia e da partida rápida (partida = lista de lances)
+  placar.ts          a partida no placar: marcar, desfazer, zerar, salvar
+  scoreboard.ts      desenha o placar na grade de LEDs (dígitos de 7 segmentos, fonte 3×5)
+  lock.ts            PIN e estado da trava do operador
   renderer/
     webgl.ts         renderizador WebGL2
     css.ts           fallback em DOM/CSS
